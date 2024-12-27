@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # uvc-gadget
 USB UVC Gadget
 =======
@@ -30,4 +29,3 @@ In brief summary:
 $ meson build --cross <meson cross file>
 $ ninja -C build
 ```
->>>>>>> 5b4eb49 (Initial commit)
