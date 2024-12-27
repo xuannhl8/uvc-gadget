@@ -23,4 +23,7 @@
 
     },
     "C_Cpp.errorSquiggles": "disabled",
+    "files.associations": {
+        "list": "c"
+    },
 }

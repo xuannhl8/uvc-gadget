@@ -74,7 +74,7 @@
         {
             "label": "Mesonbuild",
             "type": "shell",
-            "command": "source /home/dinh/imx-docker/imx-5.15.71-2.2.0-build/build_fsl-imx-xwayland/tmp/deploy/sdk-core-image-minimal/environment-setup-armv8a-poky-linux && meson build --buildtype debug && ninja -C build",
+            "command": "source /home/dinh/imx-docker/imx-5.15.71-2.2.0-build/build_fsl-imx-xwayland/tmp/deploy/sdk-core-image-minimal/environment-setup-armv8a-poky-linux && meson buildir --buildtype debug && ninja -C buildir",
             "problemMatcher": [],
             "group": {
                 "kind": "build",
