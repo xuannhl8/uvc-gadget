@@ -1,6 +1,3 @@
-# uvc-gadget
-USB UVC Gadget
-=======
 # uvcgadget - UVC gadget C library
 
 uvcgadget is a pure C library that implements handling of UVC gadget functions.
