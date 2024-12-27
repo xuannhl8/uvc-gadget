@@ -1,0 +1,14 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**", 
+                "${config:VARISCITE.SDKTARGETSYSROOT}/usr/include/**",
+                "${config:VARISCITE.SDKTARGETSYSROOT}/usr/lib/**",
+                "${config:VARISCITE.SDKTARGETSYSROOT}/usr/include/libcamera**"
+            ]
+        }
+    ],
+    "version": 4
+}

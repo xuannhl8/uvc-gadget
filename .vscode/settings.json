@@ -1,0 +1,26 @@
+{
+    "VARISCITE" : {
+        /* Target Device Settings */
+        //"TARGET_IP": "172.16.10.168",
+        "TARGET_IP": "172.16.10.168",
+
+        /* Project Settings */
+        "PROGRAM": "uvc-gadget",
+
+        /* Yocto SDK Configuration */
+        "ARCH": "aarch64-poky-linux",
+
+        "OECORE_NATIVE_SYSROOT": "/home/dinh/imx-docker/imx-5.15.71-2.2.0-build/build_fsl-imx-xwayland/tmp/deploy/sdk-imx/sysroots/x86_64-pokysdk-linux",
+
+        "SDKTARGETSYSROOT": "/home/dinh/imx-docker/imx-5.15.71-2.2.0-build/build_fsl-imx-xwayland/tmp/deploy/sdk-core-image-minimal/sysroots/armv8a-poky-linux",
+
+        /* Yocto SDK Constants */
+        "CC_PREFIX": "${config:VARISCITE.OECORE_NATIVE_SYSROOT}/usr/bin/${config:VARISCITE.ARCH}/${config:VARISCITE.ARCH}-",
+
+        "CXX": "${config:VARISCITE.CC_PREFIX}g++ -fstack-protector-strong -O0 -g -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security --sysroot=${config:VARISCITE.SDKTARGETSYSROOT}",
+
+        "CC": "${config:VARISCITE.CC_PREFIX}gcc -fstack-protector-strong -O0 -g -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security --sysroot=${config:VARISCITE.SDKTARGETSYSROOT}",
+
+    },
+    "C_Cpp.errorSquiggles": "disabled",
+}

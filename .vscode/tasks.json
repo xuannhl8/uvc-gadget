@@ -1,0 +1,96 @@
+{
+    "version": "2.0.0",
+    /* Configure Yocto SDK Constants from settings.json */
+    "options": {
+        "env": {
+            "CXX": "${config:VARISCITE.CXX}",
+            "CC": "${config:VARISCITE.CC}",
+        }
+    },
+    /* Configure integrated VS Code Terminal */
+    "presentation": {
+        "echo": false,
+        "reveal": "always",
+        "focus": true,
+        "panel": "dedicated",
+        "showReuseMessage": true,
+    },
+    "tasks": [
+        /* Configure launch.json (debug) preLaunchTask Task */
+        {
+            "label": "start-gdb",
+            "isBackground": true,
+            "problemMatcher":{
+                "base": "$gcc",
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Deploying to target",
+                    "endsPattern": "Starting GDB Server on Target"
+                }
+            },
+            "type": "shell",
+            "command": "sh",
+            "args": [
+                "var-deploy-gdb.sh",
+                "${config:VARISCITE.TARGET_IP}",
+                "${config:VARISCITE.PROGRAM}"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            }
+        },
+        {
+            "label": "deploy",
+            "isBackground": true,
+            "problemMatcher":{
+                "base": "$gcc",
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Deploying to target",
+                    "endsPattern": "Starting GDB Server on Target"
+                }
+            },
+            "type": "shell",
+            "command": "sh",
+            "args": [
+                "deploy_file_scp.sh",
+                "${config:VARISCITE.TARGET_IP}",
+                "${config:VARISCITE.PROGRAM}"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            }
+        },
+        /* Configure Build Task */
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "make clean; make -j$(nproc)",
+            "problemMatcher": ["$gcc"]
+        },
+        /* Meson Build Task */
+        {
+            "label": "Mesonbuild",
+            "type": "shell",
+            "command": "source /home/dinh/imx-docker/imx-5.15.71-2.2.0-build/build_fsl-imx-xwayland/tmp/deploy/sdk-core-image-minimal/environment-setup-armv8a-poky-linux && meson build --buildtype debug && ninja -C build",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            }
+        },
+        /* Rebuild Task */
+        {
+            "label": "Remove old build",
+            "type": "shell",
+            "command": "rm -rf build",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            }
+        }
+    ]
+}
