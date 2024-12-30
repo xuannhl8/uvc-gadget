@@ -1,0 +1,249 @@
+From a39f523a38b44b7285a247c7a1ba664f2fe72c9d Mon Sep 17 00:00:00 2001
+From: phuongchobo102 <congphuong03072002@gmail.com>
+Date: Thu, 26 Dec 2024 04:27:35 +0100
+Subject: [PATCH] Improve uvc streaming quality
+
+---
+ drivers/usb/gadget/function/f_uvc.c     | 12 ++++++------
+ drivers/usb/gadget/function/f_uvc.h     |  2 +-
+ drivers/usb/gadget/function/uvc.h       |  5 ++++-
+ drivers/usb/gadget/function/uvc_queue.c |  8 ++------
+ drivers/usb/gadget/function/uvc_v4l2.c  | 20 ++++++++++++++++++--
+ drivers/usb/gadget/function/uvc_video.c | 25 ++++++++++++++++++++++++-
+ 6 files changed, 55 insertions(+), 17 deletions(-)
+
+diff --git a/drivers/usb/gadget/function/f_uvc.c b/drivers/usb/gadget/function/f_uvc.c
+index bf0a3fc2d776..c7c95bb3e017 100644
+--- a/drivers/usb/gadget/function/f_uvc.c
++++ b/drivers/usb/gadget/function/f_uvc.c
+@@ -249,10 +249,14 @@ uvc_function_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
+ 	return 0;
+ }
+ 
+-void uvc_function_setup_continue(struct uvc_device *uvc)
++void uvc_function_setup_continue(struct uvc_device *uvc, int disable_ep)
+ {
+ 	struct usb_composite_dev *cdev = uvc->func.config->cdev;
+ 
++	if (disable_ep && uvc->video.ep) {
++		usb_ep_disable(uvc->video.ep);
++	}
++
+ 	usb_composite_setup_continue(cdev);
+ }
+ 
+@@ -320,15 +324,11 @@ uvc_function_set_alt(struct usb_function *f, unsigned interface, unsigned alt)
+ 		if (uvc->state != UVC_STATE_STREAMING)
+ 			return 0;
+ 
+-		if (uvc->video.ep)
+-			usb_ep_disable(uvc->video.ep);
+-
+ 		memset(&v4l2_event, 0, sizeof(v4l2_event));
+ 		v4l2_event.type = UVC_EVENT_STREAMOFF;
+ 		v4l2_event_queue(&uvc->vdev, &v4l2_event);
+ 
+-		uvc->state = UVC_STATE_CONNECTED;
+-		return 0;
++		return USB_GADGET_DELAYED_STATUS;
+ 
+ 	case 1:
+ 		if (uvc->state != UVC_STATE_CONNECTED)
+diff --git a/drivers/usb/gadget/function/f_uvc.h b/drivers/usb/gadget/function/f_uvc.h
+index 1db972d4beeb..083aef0c65c6 100644
+--- a/drivers/usb/gadget/function/f_uvc.h
++++ b/drivers/usb/gadget/function/f_uvc.h
+@@ -11,7 +11,7 @@
+ 
+ struct uvc_device;
+ 
+-void uvc_function_setup_continue(struct uvc_device *uvc);
++void uvc_function_setup_continue(struct uvc_device *uvc, int disable_ep);
+ 
+ void uvc_function_connect(struct uvc_device *uvc);
+ 
+diff --git a/drivers/usb/gadget/function/uvc.h b/drivers/usb/gadget/function/uvc.h
+index 0966c5aa2492..41110636cdf4 100644
+--- a/drivers/usb/gadget/function/uvc.h
++++ b/drivers/usb/gadget/function/uvc.h
+@@ -100,8 +100,11 @@ struct uvc_video {
+ 	unsigned int req_size;
+ 	struct uvc_request *ureq;
+ 	struct list_head req_free;
++	unsigned int req_free_count; /* number of requests in req_free */
+ 	spinlock_t req_lock;
+ 
++	wait_queue_head_t req_free_queue;
++
+ 	unsigned int req_int_count;
+ 
+ 	void (*encode) (struct usb_request *req, struct uvc_video *video,
+@@ -169,7 +172,7 @@ struct uvc_file_handle {
+  * Functions
+  */
+ 
+-extern void uvc_function_setup_continue(struct uvc_device *uvc);
++extern void uvc_function_setup_continue(struct uvc_device *uvc, int disable_ep);
+ extern void uvc_endpoint_stream(struct uvc_device *dev);
+ 
+ extern void uvc_function_connect(struct uvc_device *uvc);
+diff --git a/drivers/usb/gadget/function/uvc_queue.c b/drivers/usb/gadget/function/uvc_queue.c
+index a64b842665b9..221ab64c56e3 100644
+--- a/drivers/usb/gadget/function/uvc_queue.c
++++ b/drivers/usb/gadget/function/uvc_queue.c
+@@ -142,12 +142,8 @@ int uvcg_queue_init(struct uvc_video_queue *queue, struct device *dev, enum v4l2
+ 	queue->queue.buf_struct_size = sizeof(struct uvc_buffer);
+ 	queue->queue.ops = &uvc_queue_qops;
+ 	queue->queue.lock = lock;
+-	if (cdev->gadget->sg_supported) {
+-		queue->queue.mem_ops = &vb2_dma_sg_memops;
+-		queue->use_sg = 1;
+-	} else {
+-		queue->queue.mem_ops = &vb2_vmalloc_memops;
+-	}
++
++	queue->queue.mem_ops = &vb2_vmalloc_memops;
+ 
+ 	queue->queue.timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC
+ 				     | V4L2_BUF_FLAG_TSTAMP_SRC_EOF;
+diff --git a/drivers/usb/gadget/function/uvc_v4l2.c b/drivers/usb/gadget/function/uvc_v4l2.c
+index 65abd55ce234..2b375fe9e22d 100644
+--- a/drivers/usb/gadget/function/uvc_v4l2.c
++++ b/drivers/usb/gadget/function/uvc_v4l2.c
+@@ -204,7 +204,7 @@ uvc_v4l2_streamon(struct file *file, void *fh, enum v4l2_buf_type type)
+ 	 * Complete the alternate setting selection setup phase now that
+ 	 * userspace is ready to provide video frames.
+ 	 */
+-	uvc_function_setup_continue(uvc);
++	uvc_function_setup_continue(uvc, 0);
+ 	uvc->state = UVC_STATE_STREAMING;
+ 
+ 	return 0;
+@@ -216,11 +216,19 @@ uvc_v4l2_streamoff(struct file *file, void *fh, enum v4l2_buf_type type)
+ 	struct video_device *vdev = video_devdata(file);
+ 	struct uvc_device *uvc = video_get_drvdata(vdev);
+ 	struct uvc_video *video = &uvc->video;
++	int ret = 0;
+ 
+ 	if (type != video->queue.queue.type)
+ 		return -EINVAL;
+ 
+-	return uvcg_video_enable(video, 0);
++	uvc->state = UVC_STATE_CONNECTED;
++	ret = uvcg_video_enable(video, 0);
++	if (ret < 0) {
++		return ret;
++	}
++
++	uvc_function_setup_continue(uvc, 1);
++	return 0;
+ }
+ 
+ static int
+@@ -253,6 +261,14 @@ uvc_v4l2_subscribe_event(struct v4l2_fh *fh,
+ static void uvc_v4l2_disable(struct uvc_device *uvc)
+ {
+ 	uvc_function_disconnect(uvc);
++	if (uvc->state == UVC_STATE_STREAMING) {
++		/*
++		 * Drop uvc->state to CONNECTED if it was streaming before.
++		 * This ensures that the usb_requests are no longer queued
++		 * to the controller.
++		 */
++		uvc->state = UVC_STATE_CONNECTED;
++	}
+ 	uvcg_video_enable(&uvc->video, 0);
+ 	uvcg_free_buffers(&uvc->video.queue);
+ 	uvc->func_connected = false;
+diff --git a/drivers/usb/gadget/function/uvc_video.c b/drivers/usb/gadget/function/uvc_video.c
+index e170e88abf3a..3ced6075db89 100644
+--- a/drivers/usb/gadget/function/uvc_video.c
++++ b/drivers/usb/gadget/function/uvc_video.c
+@@ -233,6 +233,7 @@ uvc_video_complete(struct usb_ep *ep, struct usb_request *req)
+ 
+ 	spin_lock_irqsave(&video->req_lock, flags);
+ 	list_add_tail(&req->list, &video->req_free);
++	video->req_free_count++;
+ 	spin_unlock_irqrestore(&video->req_lock, flags);
+ 
+ 	schedule_work(&video->pump);
+@@ -264,6 +265,7 @@ uvc_video_free_requests(struct uvc_video *video)
+ 
+ 	INIT_LIST_HEAD(&video->req_free);
+ 	video->req_size = 0;
++	video->req_free_count = 0;
+ 	return 0;
+ }
+ 
+@@ -307,6 +309,7 @@ uvc_video_alloc_requests(struct uvc_video *video)
+ 	}
+ 
+ 	video->req_size = req_size;
++	video->req_free_count = req_size; /* all requests are currently free */
+ 
+ 	return 0;
+ 
+@@ -329,12 +332,13 @@ static void uvcg_video_pump(struct work_struct *work)
+ {
+ 	struct uvc_video *video = container_of(work, struct uvc_video, pump);
+ 	struct uvc_video_queue *queue = &video->queue;
++	struct uvc_device *uvc = video->uvc;
+ 	struct usb_request *req;
+ 	struct uvc_buffer *buf;
+ 	unsigned long flags;
+ 	int ret;
+ 
+-	while (1) {
++	while (video->ep->enabled) {
+ 		/* Retrieve the first available USB request, protected by the
+ 		 * request lock.
+ 		 */
+@@ -346,6 +350,7 @@ static void uvcg_video_pump(struct work_struct *work)
+ 		req = list_first_entry(&video->req_free, struct usb_request,
+ 					list);
+ 		list_del(&req->list);
++		video->req_free_count--;
+ 		spin_unlock_irqrestore(&video->req_lock, flags);
+ 
+ 		/* Retrieve the first available video buffer and fill the
+@@ -386,6 +391,7 @@ static void uvcg_video_pump(struct work_struct *work)
+ 
+ 	spin_lock_irqsave(&video->req_lock, flags);
+ 	list_add_tail(&req->list, &video->req_free);
++	video->req_free_count++;
+ 	spin_unlock_irqrestore(&video->req_lock, flags);
+ 	return;
+ }
+@@ -412,6 +418,22 @@ int uvcg_video_enable(struct uvc_video *video, int enable)
+ 			if (video->ureq && video->ureq[i].req)
+ 				usb_ep_dequeue(video->ep, video->ureq[i].req);
+ 
++		/*
++		 * Wait 500ms for the usb_requests to be given back to the
++		 * gadget driver. This ensures that we don't accidentally
++		 * reference de-allocated usb_requests in the complete callback.
++		 */
++		if (video->req_free_count != video->req_size) {
++			uvcg_info(&video->uvc->func,
++					"Waiting 500ms for usb_request complete callbacks.\n");
++			ret = wait_event_interruptible_timeout(
++					video->req_free_queue,
++					video->req_free_count == video->req_size,
++					msecs_to_jiffies(500));
++			uvcg_info(&video->uvc->func,
++					"Done waiting for complete callbacks: %d\n", ret);
++		}
++
+ 		uvc_video_free_requests(video);
+ 		uvcg_queue_enable(&video->queue, 0);
+ 		return 0;
+@@ -444,6 +466,7 @@ int uvcg_video_init(struct uvc_video *video, struct uvc_device *uvc)
+ {
+ 	INIT_LIST_HEAD(&video->req_free);
+ 	spin_lock_init(&video->req_lock);
++	init_waitqueue_head(&video->req_free_queue);
+ 	INIT_WORK(&video->pump, uvcg_video_pump);
+ 
+ 	video->uvc = uvc;
+-- 
+2.25.1
